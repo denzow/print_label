@@ -7,6 +7,8 @@ import PIL.ImageDraw
 import PIL.ImageFont
 import csv
 import re
+import os
+
 # 設定系のサイズ
 # はがきのサイズ
 CANVAS_SIZE = (1480, 1000)
@@ -17,11 +19,10 @@ ADDRESS_NO_SIZE = 50
 # 住所のフォントサイズの基準値
 ADDRESS_SIZE = 60
 # 宛名のフォントサイズの基準値
-NAME_SIZE = 90
+NAME_SIZE = 100
 
 X_START_POSIT = 250
 Y_START_POSIT = 300
-
 
 
 class PrintLabel(object):
@@ -231,16 +232,16 @@ class PrintLabelVertical(object):
         :return:
         """
         self.draw.font = self.get_font(font_size)
-        name_label_list = []
-        name_label = u"%s  %s 様" % (self.address_data["last_name"], self.address_data["first_name"])
-        name_label_list.append(name_label)
+        name_list = []
+        # name_label = u"%s  %s 様" % (self.address_data["last_name"], self.address_data["first_name"])
+        name_list.append((self.address_data["last_name"], self.address_data["first_name"]))
 
-        last_name_spacer = re.sub(".", u"　", self.address_data["last_name"])
+        #last_name_spacer = re.sub(".", u"　", self.address_data["last_name"])
+
         for sub_name in self.address_data["sub_first_name_list"]:
-            sub_name_label = u"%s  %s 様" % (last_name_spacer, sub_name)
-            name_label_list.append(sub_name_label)
+            name_list.append((self.address_data["last_name"], sub_name))
 
-        self.write_vertical_center(name_label_list, font_size, start_posit_y=self.write_posit[1] + 30)
+        self.write_vertical_center(name_list, font_size, start_posit_y=self.write_posit[1] + 30)
 
     def write_vertical(self, text, font_size, start_posit):
         """
@@ -259,7 +260,7 @@ class PrintLabelVertical(object):
         for character in text:
             txt_size = list(self.draw.font.getsize(character))
             # 文字列の高さと文字列の間の幅を加算していく
-            total_size[1] += txt_size[1] - (font_size * 0.1)
+            total_size[1] += txt_size[1]
             # 文字幅の最大長を取得
             if total_size[0] < txt_size[0]:
                 total_size[0] = txt_size[0]
@@ -282,50 +283,72 @@ class PrintLabelVertical(object):
             else:
                 self.draw.text(write_posit, character, (0, 0, 0))
             # 次の文字のためずらす
-            write_posit[1] += txt_size[1] - (font_size * 0.1)
+            write_posit[1] += txt_size[1]
 
         return total_size
 
-    def write_vertical_center(self, text_list, font_size, start_posit_y):
+    def write_vertical_center(self, name_list, font_size, start_posit_y):
         """
         センタリングして縦書きする
-        :param text_list:
+        :param name_list:
         :param font_size:
         :param start_posit_y:
         :return:
         """
 
+        max_height = 0
+        for last_name, first_name in name_list:
+            tmp_max_heght = self.get_vertical_height("%s　%s 様" % (last_name, first_name), font_size)
+
+            if tmp_max_heght > max_height:
+                max_height = tmp_max_heght
+
         self.draw.font = self.get_font(font_size)
-        # 最大の高さを確認スル
-        max_str_length = max([len(text) for text in text_list])
-        one_char_size = list(self.draw.font.getsize("　"))
+        one_char_width = self.draw.font.getsize("　")[0]
 
         # 連名の場合もあるのでそのぶんを踏まえてセンタリング
-        center_x = (self.img_size[0] - one_char_size[0] * len(text_list)) / 2
+        center_x = (self.img_size[0] - one_char_width * len(name_list)) / 2
         # これは左端なので連名の場合は連名者からはじめる必要がある
         write_posit = [center_x, start_posit_y]
 
         # 高さ足りてる？
-        if start_posit_y + one_char_size[1] * max_str_length > self.img_size[1] - 30:
-            return self.write_vertical_center(text_list, font_size - 5, start_posit_y)
+        if start_posit_y + max_height > self.img_size[1] - 30:
+            return self.write_vertical_center(name_list, font_size - 5, start_posit_y)
 
-        for name in reversed(text_list):
+        # 同居人から逆順に書き出す
+        for i, (last_name, first_name) in enumerate(reversed(name_list)):
             start_write_posit = write_posit[:]
-            for character in name:
-                txt_size = list(self.draw.font.getsize(character))
-                # 半角文字がずれるので幅みてずらす
-                if one_char_size[0] > txt_size[0]:
-                    tmp_write_posit = start_write_posit[:]
-                    # 差分の半分だけX軸ずらせばセンタリングになる
-                    tmp_write_posit[0] += (one_char_size[0] - txt_size[0]) / 2
-                    self.draw.text(tmp_write_posit, character, (0, 0, 0))
-                else:
-                    self.draw.text(start_write_posit, character, (0, 0, 0))
+            # 世帯主
+            if i == len(name_list) - 1:
+                # 苗字を書き込む
+                self.write_vertical(last_name + "　", font_size, start_write_posit)
+                # カーソルをずらす
+                start_write_posit[1] += self.get_vertical_height(last_name + "　", font_size)
+                # 名前を書き込む
+                total_size = self.write_vertical(first_name + " 様", font_size, start_write_posit)
 
-                start_write_posit[1] += txt_size[1] - (font_size * 0.1)
+                write_posit[0] += total_size[0]
+            # 同居人
+            else:
 
-            write_posit[0] += one_char_size[0] - (font_size * 0.1)
+                # 苗字分ずらす
+                start_write_posit[1] += self.get_vertical_height(last_name + "　", font_size)
+                total_size = self.write_vertical(first_name + " 様", font_size, start_write_posit)
+                # 次のために横にずらす
+                write_posit[0] += total_size[0]
 
+    def get_vertical_height(self, text, font_size):
+        """
+        縦に並べた際の文字の高さを取得する
+        :param text:
+        :param font_size:
+        :return:
+        """
+        self.draw.font = self.get_font(font_size)
+        size = 0
+        for character in text:
+            size += self.draw.font.getsize(character)[1]
+        return size
 
 def read_csv(csv_file_path):
     """
@@ -389,15 +412,21 @@ def do_main():
             print("invalid mode")
             sys.exit(1)
 
+    is_debug = False
+    if len(sys.argv) > 4:
+        is_debug = sys.argv[4] is not None
+
     address_list = read_csv(target_file)
     for address_data in address_list:
         if mode == "horizontal":
             label = PrintLabel(address_data)
         else:
             label = PrintLabelVertical(address_data)
+        if is_debug:
+            label.print_label().show()
+        else:
+            label.print_label().save(dest_dir+os.sep+address_data["last_name"]+address_data["first_name"]+".png")
 
-        label.print_label().show()
-        break
 
 if __name__ == u"__main__":
     do_main()
