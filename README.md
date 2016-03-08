@@ -7,7 +7,7 @@ print_label
 
 ## 使い方
 
-> print_label.pr <target_csv> <dest_dir> [horizontal/vertical]
+> print_label.py target_csv dest_dir [horizontal/vertical]
 
 dest_dirに指定したディレクトリ配下に名前.pngというファイル名で画像が作成されます。
 
